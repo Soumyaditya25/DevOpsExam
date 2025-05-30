@@ -8,4 +8,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 
+LABEL maintainer="Soumyaditya Batabyal <soumyaditya2021@gmail.com>"
+
 CMD ["python", "app.py"]
