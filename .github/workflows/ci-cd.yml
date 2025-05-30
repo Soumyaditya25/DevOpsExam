@@ -1,46 +1,47 @@
-name: CI/CD Pipeline
+name: Build-Test-Push-to-DockerHub
 
 on:
   push:
     branches: [main]
 
 jobs:
-  build:
+  build-test-and-push:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Build Docker image
         run: |
-          docker build -t flask-app:latest .
+          IMAGE_NAME="${{ secrets.DOCKERHUB_USERNAME }}/devopsexam"
+          TAG="${IMAGE_NAME}:${{ github.sha }}"
+          docker build -t "$TAG" .
 
-  test:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Run and test container
+      - name: Run & test container locally
         run: |
-          docker run -d --name test -p 5000:5000 flask-app:latest
+          IMAGE_NAME="${{ secrets.DOCKERHUB_USERNAME }}/devopsexam"
+          TAG="${IMAGE_NAME}:${{ github.sha }}"
+          docker run -d --name smoke-test -p 5000:5000 "$TAG"
           sleep 10
-          curl -f http://localhost:5000 || exit 1
-          docker stop test
-          docker rm test
+          curl -f http://localhost:5000/ || (docker logs smoke-test && exit 1)
+          docker stop smoke-test
+          docker rm smoke-test
 
-  deploy:
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up SSH
-        uses: webfactory/ssh-agent@v0.7.0
-        with:
-          ssh-private-key: ${{ secrets.REMOTE_SSH_KEY }}
-      - name: Deploy to VM
+      - name: Push Docker image to Docker Hub
         run: |
-          ssh -o StrictHostKeyChecking=no ubuntu@YOUR_VM_IP \
-            "docker pull flask-app:latest || true && \
-             docker stop flask-app || true && \
-             docker rm flask-app || true && \
-             docker run -d \
-               --name flask-app \
-               -p 5000:5000 \
-               flask-app:latest"
+          IMAGE_NAME="${{ secrets.DOCKERHUB_USERNAME }}/devopsexam"
+          TAG="${IMAGE_NAME}:${{ github.sha }}"
+          docker push "$TAG"
+
+      - name: Tag & push as "latest"
+        run: |
+          IMAGE_NAME="${{ secrets.DOCKERHUB_USERNAME }}/devopsexam"
+          docker tag "$IMAGE_NAME:${{ github.sha }}" "$IMAGE_NAME:latest"
+          docker push "$IMAGE_NAME:latest"
